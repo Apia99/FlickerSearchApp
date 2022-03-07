@@ -7,11 +7,11 @@
 
 import Foundation
 
-struct FlickrResponse: Codable {
+struct FlickrResponse: Decodable {
     let photos: FlickrPhotos
 }
 
-struct FlickrPhotos: Codable {
+struct FlickrPhotos: Decodable {
     let page: Int
     let pages: Int
     let perpage: Int
@@ -19,7 +19,7 @@ struct FlickrPhotos: Codable {
     let photo: [Photo]
 }
 
-struct Photo: Codable {
+struct Photo: Decodable {
     let id: String
     let url_m: String?
     let title: String

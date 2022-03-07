@@ -6,38 +6,73 @@
 //
 
 import UIKit
+import Combine
 
 class ViewController: UIViewController {
     
-    @IBOutlet weak var flickrImageView: UIImageView!
     @IBOutlet weak var searchTextField: UITextField!
     
-   
+    @IBOutlet weak var collectionView: UICollectionView!
+    
+    let viewModel = ViewModel()
+    var subscribers = Set<AnyCancellable>()
+    
+    var performFlickrSearch = [ViewModel].self
+    
+    var session: URLSession = URLSession.shared
+    
+    func setURLSession(_ session: URLSession) {
+        self.session = session
+    }
+    
     @IBAction func searchButtonAction(_ sender: Any) {
-       
-        let searchText = searchTextField.text
-        if (searchText!.isEmpty)
+        
+        let searchText = searchTextField.text!
+        searchOnFlickr(searchText)
+    }
+    
+    func searchOnFlickr(_ searchText: String) {
+        if (searchText.isEmpty)
         {
             displayAlert("Search text cannot be empty")
             return;
         }
         
-        let searchURL = flickrURLFromParameters(searchString: searchText!)
+        let searchURL = flickrURLFromParameters(searchString: searchText)
         print("URL: \(searchURL)")
         
-        performFlickrSearch(searchURL)
-        
+        viewModel.performFlickrSearch(searchURL)
     }
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        setUpBinding()
+        collectionView.dataSource = self
+    }
+    
+    private func setUpBinding() {
+        viewModel
+            .$displayAlert
+            .dropFirst()
+            .sink { message in
+                self.displayAlert(message)
+            }
+            .store(in: &subscribers)
+        
+        viewModel
+            .$photosArray
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { array in
+                self.collectionView.reloadData()
+            }
+            .store(in: &subscribers)
     }
     
     override func didReceiveMemoryWarning() {
     super.didReceiveMemoryWarning()
     }
-    
-
     
     private func flickrURLFromParameters(searchString: String) -> URL {
         
@@ -62,78 +97,6 @@ class ViewController: UIViewController {
         return components.url!
     }
     
-    private func performFlickrSearch(_ searchURL: URL) {
-        
-        let session = URLSession.shared
-        let request = URLRequest(url: searchURL)
-        let task = session.dataTask(with: request){
-            (data, response, error) in
-            if (error == nil)
-            {
-                let status = (response as! HTTPURLResponse).statusCode
-                if (status < 200 || status > 300)
-                {
-                    self.displayAlert("Server returned an error")
-                    return;
-                }
-                
-                guard let data = data else {
-                    self.displayAlert("No data was returned by the request!")
-                    return
-                }
-                
-                let parsedResult: FlickrResponse
-                do {
-                    parsedResult = try JSONDecoder().decode(FlickrResponse.self, from: data)
-                } catch (let error) {
-                    print(error)
-                    self.displayAlert("Could not parse the data as JSON: '\(data)'")
-                    return
-                }
-                print("Result: \(parsedResult)")
-                
-                let photosArray = parsedResult.photos.photo
-                
-                
-                // Check number of ophotos
-                if photosArray.count == 0 {
-                    self.displayAlert("No Photos Found. Search Again.")
-                    return
-                } else {
-                    // Get the first image
-                    let photo = photosArray[0]
-                    
-                    // Fetch the image
-                    self.fetchImage(photo.url_m);
-                }
-            
-            }
-            else{
-                self.displayAlert((error?.localizedDescription)!)
-            }
-        }
-        task.resume()
-    }
-    
-    private func fetchImage(_ url: String?) {
-        
-        guard let url = url else { return }
-        
-        let imageURL = URL(string: url)
-        
-        let task = URLSession.shared.dataTask(with: imageURL!) { (data, response, error) in
-            if error == nil {
-                let downloadImage = UIImage(data: data!)!
-                
-                DispatchQueue.main.async(){
-                    self.flickrImageView.image = downloadImage
-                }
-            }
-        }
-        
-        task.resume()
-    }
-    
     func displayAlert(_ message: String)
     {
         DispatchQueue.main.async {
@@ -144,5 +107,18 @@ class ViewController: UIViewController {
     }
 }
 
-
+extension ViewController: UICollectionViewDataSource {
+    
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        return viewModel.photosArray.count
+    }
+    
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "CollectionViewCell", for: indexPath) as! CollectionViewCell
+        let photo = viewModel.photosArray[indexPath.row]
+        cell.fetchImage(photo.url_m)
+        return cell
+    }
+    
+}
 
